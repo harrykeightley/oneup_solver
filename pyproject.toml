@@ -1,0 +1,19 @@
+[project]
+name = "oneup"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Harry Keightley", email = "harrykeightley@outlook.com" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "numpy>=2.4.1",
+]
+
+[project.scripts]
+oneup = "oneup:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

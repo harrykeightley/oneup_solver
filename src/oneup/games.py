@@ -13,11 +13,11 @@ def build_game(
     for a, b in wall_positions:
         walls.add(Wall.from_positions(a, b))
 
-    game = OneUp(
-        grid=Grid.from_empty(size), walls=walls, blocked_positions=blocking_positions
-    )
+    grid = Grid.from_empty(size)
     for position, value in values.items():
-        game.grid.set_position(position, value)
+        grid.set_position(position, value)
+
+    game = OneUp(grid=grid, walls=walls, blocked_positions=blocking_positions)
     return game
 
 

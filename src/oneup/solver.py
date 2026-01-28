@@ -42,7 +42,6 @@ def default_solver_strategy(solver: OneUpSolver) -> list[SolverAction]:
 
     # Identify mutually-exclusive rounds
     for vision_group in solver.game.all_vision_groups():
-        # print("v", vision_group)
         group_data = {
             position: solver.possible_values[position]
             for position in vision_group
@@ -51,22 +50,20 @@ def default_solver_strategy(solver: OneUpSolver) -> list[SolverAction]:
         if len(group_data) == 0:
             continue
 
-        print(set(group_data.keys()))
-
         for round_size in range(2, len(group_data)):
-            round_positions = detect_rounds(round_size, group_data)
-            if round_positions is None:
+            group_positions = detect_groups(round_size, group_data)
+            if group_positions is None:
                 continue
 
             round_values: set[int] = reduce(
                 operator.or_,
-                [solver.possible_values[position] for position in round_positions],
+                [solver.possible_values[position] for position in group_positions],
                 set(),
             )
 
-            print("r", round_size, round_positions, round_values)
+            print(f"Detected {round_size}-Group, ({round_values}) at {group_positions}")
 
-            non_round_positions = vision_group - round_positions
+            non_round_positions = vision_group - group_positions
 
             # Check if we're actually going to update anything with this
             result = []
@@ -86,13 +83,13 @@ def default_solver_strategy(solver: OneUpSolver) -> list[SolverAction]:
 type RoundDetector = Callable[[int, dict[Position, set[int]]], Optional[set[int]]]
 
 
-def detect_rounds(
+def detect_groups(
     size: int, group: dict[Position, set[int]]
 ) -> Optional[set[Position]]:
-    return _detect_round(size, group, set(), set())
+    return _detect_group(size, group, set(), set())
 
 
-def _detect_round(
+def _detect_group(
     size: int,
     group: dict[Position, set[int]],
     included: set[Position],
@@ -119,7 +116,7 @@ def _detect_round(
         return None
 
     next_position = remaining_positions.pop()
-    result_with_next_position = _detect_round(
+    result_with_next_position = _detect_group(
         size, group, included | set([next_position]), excluded
     )
 
@@ -127,7 +124,7 @@ def _detect_round(
         return result_with_next_position
 
     # Detect the round without this next number
-    return _detect_round(size, group, included, excluded | set([next_position]))
+    return _detect_group(size, group, included, excluded | set([next_position]))
 
 
 def _is_round(values: list[set[int]]) -> bool:
@@ -138,9 +135,12 @@ def _is_round(values: list[set[int]]) -> bool:
 class OneUpSolver:
     def __init__(self, game: OneUp) -> None:
         self.game = game
-        self.possible_values: dict[Position, set[int]] = defaultdict()
+        self.possible_values: dict[Position, set[int]] = defaultdict(set)
         """A set of possible values for each position in the game."""
         self.initialize_possible_values()
+
+        self.hints: dict[Position, set[int]] = defaultdict(set)
+        """A set of user supplied values for each position in the game."""
 
         self.state = SolverState.SOLVING
 
@@ -171,11 +171,7 @@ class OneUpSolver:
         return len(self.possible_values[position]) - 1
 
     def step_solver(self, strategy: SolverStrategy = default_solver_strategy):
-        if self.state == SolverState.HALTED or self.state == SolverState.COMPLETE:
-            return
-
-        if self.game.is_complete():
-            self.state = SolverState.COMPLETE
+        if self.state == SolverState.COMPLETE:
             return
 
         actions = strategy(self)
@@ -183,6 +179,11 @@ class OneUpSolver:
             self.state = SolverState.HALTED
             return
 
+        self.perform_actions(actions)
+        if self.game.is_complete():
+            self.state = SolverState.COMPLETE
+
+    def perform_actions(self, actions: list[SolverAction]):
         action_queue: list[SolverAction] = actions
         while len(action_queue) > 0:
             action = action_queue.pop()
@@ -195,12 +196,16 @@ class OneUpSolver:
             self.action_result_stack.append(result)
             action_queue.extend(result.next_actions)
 
+    def perform_action(self, action: SolverAction):
+        return self.perform_actions([action])
+
     def undo(self):
         if len(self.action_result_stack) == 0:
             return
 
         last_action = self.action_result_stack.pop()
         if last_action.succeeded and last_action.undo is not None:
+            print(f"Undoing: {last_action.summary}")
             last_action.undo(self)
 
 
@@ -215,6 +220,69 @@ class ActionResult:
     summary: str
     next_actions: list[SolverAction]
     undo: Optional[Callable[[OneUpSolver]]] = None
+
+
+class AddHint(SolverAction):
+    def __init__(self, position: Position, value: int) -> None:
+        self.position = position
+        self.value = value
+
+    def perform(self, solver: OneUpSolver) -> ActionResult:
+        success = self.value not in solver.hints[self.position]
+        solver.hints[self.position].add(self.value)
+
+        def undo(solver: OneUpSolver):
+            if success:
+                solver.hints[self.position].remove(self.value)
+
+        return ActionResult(
+            summary=f"Add hint of {self.value} to {self.position.as_tuple()}",
+            succeeded=success,
+            next_actions=[],
+            undo=undo,
+        )
+
+
+class RemoveHint(SolverAction):
+    def __init__(self, position: Position, value: int) -> None:
+        self.position = position
+        self.value = value
+
+    def perform(self, solver: OneUpSolver) -> ActionResult:
+        success = self.value in solver.hints[self.position]
+        solver.hints[self.position].remove(self.value)
+
+        def undo(solver: OneUpSolver):
+            if success:
+                solver.hints[self.position].add(self.value)
+
+        return ActionResult(
+            summary=f"Remove hint: {self.value} from {self.position.as_tuple()}",
+            succeeded=success,
+            next_actions=[],
+            undo=undo,
+        )
+
+
+class AddPossibleValue(SolverAction):
+    def __init__(self, position: Position, value: int) -> None:
+        self.position = position
+        self.value = value
+
+    def perform(self, solver: OneUpSolver) -> ActionResult:
+        success = self.value not in solver.possible_values[self.position]
+        solver.possible_values[self.position].add(self.value)
+
+        def undo(solver: OneUpSolver):
+            if success:
+                solver.possible_values[self.position].remove(self.value)
+
+        return ActionResult(
+            summary=f"Add possible value of {self.value} to {self.position.as_tuple()}",
+            succeeded=success,
+            next_actions=[],
+            undo=undo,
+        )
 
 
 class RemovePossibleValue(SolverAction):

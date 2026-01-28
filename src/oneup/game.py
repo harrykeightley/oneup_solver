@@ -57,6 +57,13 @@ class OneUp:
     grid: Grid
     walls: set[Wall]
     blocked_positions: set[Position] = field(default_factory=set)
+    fixed_positions: set[Position] = field(default_factory=set)
+    """Positions which have values in the original game state."""
+
+    def __post_init__(self):
+        for position in self.free_positions():
+            if self.grid.get_position(position) > 0:
+                self.fixed_positions.add(position)
 
     @property
     def size(self) -> int:

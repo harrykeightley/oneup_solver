@@ -22,9 +22,9 @@ from oneup.solver import (
 class OneUpApp:
     SHIFT_BINDINGS = "!@#$%^&*("
 
-    class Mode(Enum):
-        CREATION = "creation"
-        PLAY = "play"
+    class PlacementMode(Enum):
+        WALLS = "wall"
+        NUMBERS = "number"
 
     def __init__(self, root: tk.Tk, game: OneUp) -> None:
         root.title("OneUp")
@@ -32,14 +32,15 @@ class OneUpApp:
         self.game = game
         self.solver = OneUpSolver(self.game)
 
-        self.mode = OneUpApp.Mode.PLAY
+        self.placement_mode = OneUpApp.PlacementMode.NUMBERS
         self.show_solver_hints = False
 
         self.grid = GridCanvas(
             root,
             dimensions=(8, 8),
             size=(600, 600),
-            on_select_position=self.on_select_position,
+            on_select_position=self.on_click_position,
+            on_right_click_position=self.on_right_click_position,
             on_select_wall=self.on_select_wall,
         )
         self.grid.pack(fill=tk.BOTH, expand=True)
@@ -91,6 +92,19 @@ class OneUpApp:
         self.game = OneUp(grid=Grid.from_empty(size), walls=set())
         self.reset()
 
+    def remake_game(self):
+        """Rebuilds the game to refresh the vision stuff. Kind of ridiculous."""
+        data = OneUpSerializer.data_dict(self.game)
+        grid = Grid.from_list(data["size"], data["values"])
+        old_fixed = self.game.fixed_positions
+        self.game = OneUp(
+            grid=grid,
+            walls=self.game.walls,
+            blocked_positions=self.game.blocked_positions,
+        )
+        self.game.fixed_positions = old_fixed
+        self.reset()
+
     def reset(self):
         for position in self.game.free_positions():
             if position in self.game.fixed_positions:
@@ -112,6 +126,9 @@ class OneUpApp:
         result = set[Position]()
         for group in self.game.all_vision_groups():
             for start in group:
+                if len(self.solver.possible_values[start]) == 0:
+                    result.add(start)
+
                 for other in group:
                     if start == other:
                         continue
@@ -135,10 +152,10 @@ class OneUpApp:
         return callback
 
     def toggle_creation_mode(self):
-        if self.mode == self.Mode.PLAY:
-            self.mode = self.Mode.CREATION
+        if self.placement_mode == self.PlacementMode.NUMBERS:
+            self.placement_mode = self.PlacementMode.WALLS
         else:
-            self.mode = self.Mode.PLAY
+            self.placement_mode = self.PlacementMode.NUMBERS
 
     def toggle_solver_hints(self):
         self.show_solver_hints = not self.show_solver_hints
@@ -153,16 +170,29 @@ class OneUpApp:
             show_solver_hints=self.show_solver_hints,
         )
 
-    def on_select_position(self, position: Position):
-        if position == self.selected_position:
-            self.selected_position = None
+    def on_right_click_position(self, position: Position):
+        if self.placement_mode != self.PlacementMode.WALLS:
+            return
+
+        self.selected_position = None
+        if position in self.game.blocked_positions:
+            self.game.blocked_positions.remove(position)
         else:
-            self.selected_position = position
+            self.game.blocked_positions.add(position)
+
+        self.remake_game()
+
+    def on_click_position(self, position: Position):
+        if self.placement_mode == self.PlacementMode.NUMBERS:
+            if position == self.selected_position:
+                self.selected_position = None
+            else:
+                self.selected_position = position
 
         self.redraw()
 
     def on_select_wall(self, wall: Wall):
-        if self.mode != self.Mode.CREATION:
+        if self.placement_mode != self.PlacementMode.WALLS:
             return
 
         if wall in self.game.walls:
@@ -170,10 +200,7 @@ class OneUpApp:
         else:
             self.game.walls.add(wall)
 
-        data = OneUpSerializer.data_dict(self.game)
-        grid = Grid.from_list(data["size"], data["values"])
-        self.game = OneUp(grid=grid, walls=self.game.walls)
-        self.reset()
+        self.remake_game()
 
     def on_keypress(self, event: tk.Event):
         # Value Bindings
@@ -241,6 +268,7 @@ class GridCanvas(tk.Canvas):
         dimensions: tuple[int, int],
         size: tuple[int, int],
         on_select_position: Callable[[Position], None],
+        on_right_click_position: Callable[[Position], None],
         on_select_wall: Callable[[Wall], None],
         *args,
         **kwargs,
@@ -250,8 +278,10 @@ class GridCanvas(tk.Canvas):
         width, height = self.size
         super().__init__(master, width=width, height=height, *args, **kwargs)
         self.on_select_position = on_select_position
+        self.on_right_click_position = on_right_click_position
         self.on_select_wall = on_select_wall
         self.bind("<Button-1>", self.on_click)
+        self.bind("<Button-3>", self.on_right_click)
 
     def on_click(self, event: tk.Event):
         position = self.pixels_to_position((event.x, event.y))
@@ -259,6 +289,10 @@ class GridCanvas(tk.Canvas):
 
         wall = self.nearest_wall((event.x, event.y))
         self.on_select_wall(wall)
+
+    def on_right_click(self, event: tk.Event):
+        position = self.pixels_to_position((event.x, event.y))
+        self.on_right_click_position(position)
 
     def pixels_to_position(self, pixels: tuple[float, float]) -> Position:
         x, y = pixels
@@ -317,7 +351,7 @@ class GridCanvas(tk.Canvas):
             return "yellow"
 
         if position in errors:
-            return "red"
+            return "orange"
 
         return "white"
 

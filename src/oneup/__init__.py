@@ -2,7 +2,7 @@ from pathlib import Path
 from oneup.app import start_app
 from oneup.game import OneUpSerializer
 from oneup.games import practice_10, practice_2, puzzle_15_4, round_of_16
-from oneup.solver import OneUpSolver, SolverState
+from oneup.solver import OneUpSolver
 from pprint import pprint
 
 ROOT_DIR = Path(__file__).parent.parent.parent / "levels"

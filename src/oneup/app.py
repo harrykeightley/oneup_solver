@@ -48,8 +48,8 @@ class OneUpApp:
 
         self.commands = CommandsPane(
             root,
-            on_step=self.update(lambda: self.solver.step_solver()),
-            on_undo=self.update(self.solver.undo),
+            on_step=self.step,
+            on_undo=self.undo,
             on_reset=self.reset,
             on_solve=self.attempt_solve,
             toggle_creation=self.update(self.toggle_creation_mode),
@@ -68,6 +68,14 @@ class OneUpApp:
         menu.add_cascade(label="File", menu=filemenu)
         root.config(menu=menu)
 
+        self.redraw()
+
+    def step(self):
+        self.solver.step_solver()
+        self.redraw()
+
+    def undo(self):
+        self.solver.undo()
         self.redraw()
 
     def save(self):

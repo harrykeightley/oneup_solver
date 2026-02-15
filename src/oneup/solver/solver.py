@@ -12,6 +12,9 @@ from .types import SolverState
 class OneUpSolver:
     def __init__(self, game: OneUp) -> None:
         self.game = game
+        self.reset()
+
+    def reset(self):
         self.possible_values: dict[Position, set[int]] = defaultdict(set)
         """A set of possible values for each position in the game."""
         self.initialize_possible_values()
@@ -48,16 +51,15 @@ class OneUpSolver:
         return len(self.possible_values[position]) - 1
 
     def step_solver(self, strategy: SolverStrategy = default_solver_strategy):
-        if self.state == SolverState.COMPLETE:
-            return
-
         actions = strategy(self)
         if actions == []:
             self.state = SolverState.HALTED
+            print("HALTED")
             return
 
         self.perform_actions(actions)
         if self.game.is_complete():
+            print("COMPLETE")
             self.state = SolverState.COMPLETE
 
     def perform_actions(self, actions: list[SolverAction]):

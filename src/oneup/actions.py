@@ -66,6 +66,8 @@ class ActionQueue[T]:
             self.action_index += 1
             action_stack.extend(result.next_actions)
 
+        print("Action Index post actions", self.action_index)
+
     def previous_savepoint(self) -> Optional[int]:
         return max([s for s in self.save_points if s < self.action_index], default=None)
 
